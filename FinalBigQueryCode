@@ -1,0 +1,265 @@
+## These are the following codes and steps taken to compile, clean and sort the data used to complete the capstone project for the
+Google Data Analytics Professional Certificate
+------------------------------
+      1. Imported all 12 months of data into individual tables naming them along with their respective months, this step was done by simply downloading all the files and 
+selecting 'Add Data' within BigQuery. Since these were large files, a few of them had to be uploaded to the google drive, then imported that way
+
+
+      2. Combined all 12 months of data into one large data table called "Annual Trip Data"
+
+
+      ## Joining all 12 months data into 1 table 
+SELECT
+  *
+FROM
+  `finalprojectbikedata.TripData.January` as Jan
+UNION ALL
+SELECT
+  *
+FROM
+  `finalprojectbikedata.TripData.February` as Feb
+UNION ALL
+SELECT
+  *
+FROM
+  `finalprojectbikedata.TripData.March` as Mar
+UNION ALL
+SELECT
+ *
+FROM 
+ `finalprojectbikedata.TripData.April` as Apr
+UNION ALL
+SELECT
+ *
+FROM
+ `finalprojectbikedata.TripData.May` as May
+UNION ALL
+SELECT 
+ *
+FROM
+ `finalprojectbikedata.TripData.June` as Jun
+UNION ALL
+SELECT
+ *
+FROM
+ `finalprojectbikedata.TripData.July` as Jul
+UNION ALL
+SELECT
+ *
+FROM
+ `finalprojectbikedata.TripData.August` as Aug
+UNION ALL
+SELECT
+ *
+FROM
+ `finalprojectbikedata.TripData.September` as Sep
+UNION ALL
+SELECT
+ *
+FROM
+ `finalprojectbikedata.TripData.October` as Oct
+UNION ALL
+SELECT
+ *
+FROM
+ `finalprojectbikedata.TripData.November` as Nov
+UNION ALL
+SELECT
+ *
+FROM
+ `finalprojectbikedata.TripData.December` as Dec;
+-----
+
+      3. Adding a new column to the table labeled distance_in_miles
+
+      ## Creating a column to previous created table to measure the distance in mils
+
+ALTER TABLE `finalprojectbikedata.TripData.Annual_Trip_Data`
+ADD COLUMN distance_in_miles FLOAT64;
+-----
+
+      4. Generating values for the column just created , was only provided longitude and latitude
+      
+      ## Using start long and lat to calculate distance in miles
+
+UPDATE `finalprojectbikedata.TripData.Annual_Trip_Data`
+SET distance_in_miles = ST_DISTANCE(ST_GEOGPOINT(start_lng, start_lat), ST_GEOGPOINT(end_lng, end_lat)) / 1609.344
+WHERE distance_in_miles is NULL ;
+---
+
+      5. Cleaning up the distance_in_miles column by rounded it to the nearest hundredth
+      
+      ## Rounding the total distance in miles to nearest hundredth
+
+UPDATE `finalprojectbikedata.TripData.Annual_Trip_Data`
+SET distance_in_miles = ROUND(distance_in_miles, 2)
+WHERE distance_in_miles > 0;
+-----
+
+      6. Adding a new column to calculate ride length in minutes
+
+      ## Adding COLUMN TO calculate ride length in minutes
+      
+ALTER TABLE
+  finalprojectbikedata.TripData.Annual_Trip_Data ADD COLUMN ride_length_minutes INT64;
+-----  
+  
+      7. Using the start and end time to calculate the ride length in minutes
+      
+      ## Getting the ride_length_minutes
+SELECT
+  ended_at,
+  started_at,
+  (TIMESTAMP_DIFF(ended_at, started_at, MINUTE)) AS ride_length_minutes,
+FROM
+  `finalprojectbikedata.TripData.Annual_Trip_Data`;
+-----
+
+      8. Adding a Day of the Week Column
+      
+      ## Adding day of week
+ALTER TABLE `finalprojectbikedata.TripData.Annual_Trip_Data`
+ADD COLUMN day_of_week string;
+
+      ## Using start date column to generate the day of the week
+UPDATE `finalprojectbikedata.TripData.Annual_Trip_Data`
+SET day_of_week = FORMAT_DATE('%A', started_at)
+WHERE day_of_week is NULL ;
+-----
+
+      9. Reorganizing the columns and exporting to a new table that only has the relevant data needed
+      
+      ## SELECT ride_id, started_at, ended_at, ride_length_minutes, day_of_week, member_casual
+FROM `finalprojectbikedata.TripData.Annual_Trip_Data`
+WHERE ride_length_minutes > 0;
+-----
+
+      10. Saved the table that populated from the previous step and named it Final Trip Info
+      
+      ## Ensuring there are no duplicate Ride IDs
+SELECT COUNT(ride_id) - COUNT(DISTINCT ride_id) as duplicate_count
+FROM `finalprojectbikedata.TripData.final_trip_info`;
+-----
+      ## Cleaning up the data on the new table just in case
+DELETE 
+FROM 'finalprojectbikedata.TripData.final_trip_info'
+WHERE ride_id IS NULL OR ride_length_minutes IS NULL OR day_of_week IS NULL OR member_casual IS NULL OR distance_in_miles IS NULL;
+-----
+
+      11. Noticed that I forgot to import the rideable type column from the Annual Trip Data table, so I am creating that column in the new table 
+      
+      ## First add the column to the Final Trip Info table
+ALTER TABLE finalprojectbikedata.TripData.final_trip_info
+ADD COLUMN rideable_type STRING;
+-----
+
+      12. Now I assign the values by taking the info from Annual Trip Data rideable type column and matching the values to the corresponding
+      column using the ride_id column as the primary join key
+      
+      ## Updating the rideable type column on Final Trip Info
+UPDATE finalprojectbikedata.TripData.final_trip_info
+SET rideable_type = (
+  SELECT Annual_Trip_Data.rideable_type
+  FROM finalprojectbikedata.TripData.Annual_Trip_Data
+  WHERE finalprojectbikedata.TripData.final_trip_info.ride_id = Annual_Trip_Data.ride_id
+)
+WHERE finalprojectbikedata.TripData.final_trip_info.rideable_type IS NULL;
+------------------------------   
+
+
+
+
+These are some of the queries used to better understand the data and try to uncover any trends
+
+## Checking number OF members
+SELECT
+  COUNT(*)
+FROM
+  `finalprojectbikedata.TripData.Annual_Trip_Data`
+WHERE
+  member_casual = 'member'
+-----
+
+## Checking number OF casual riders
+SELECT
+  COUNT(*)
+FROM
+  `finalprojectbikedata.TripData.Annual_Trip_Data`
+WHERE
+  member_casual = 'casual'
+-----
+
+## Getting the percentage of members vs casual riders
+WITH member_casual_count AS (
+  SELECT 
+    member_casual,
+    COUNT(*) as count
+  FROM 
+    `finalprojectbikedata.TripData.final_trip_info`
+  GROUP BY 
+    member_casual
+),
+total_count AS (
+  SELECT
+    SUM(count) as total_count
+  FROM
+    member_casual_count
+)
+
+SELECT 
+  member_casual,
+  ROUND(count/total_count.total_count * 100, 2) as percentage
+FROM 
+  member_casual_count
+  JOIN total_count
+  ON true;
+-----
+
+## Checking to see how many casual riders ride for longer than one hour
+SELECT
+  *
+FROM
+  `finalprojectbikedata.TripData.final_trip_info`
+WHERE
+  ride_length_minutes > 60
+  AND member_casual = 'casual';      
+-----
+
+## Checking to see how many members ride for longer than one hour
+SELECT
+  *
+FROM
+  `finalprojectbikedata.TripData.final_trip_info`
+WHERE
+  ride_length_minutes > 60
+  AND member_casual = 'member'; 
+-----
+  
+## Checking total number of trips less than or equal to 1 hour and have a distance greater than 0 miles
+SELECT 
+ * 
+FROM 
+ `finalprojectbikedata.TripData.final_trip_info`
+WHERE 
+ ride_length_minutes <= 60 
+ AND ride_id IS NOT null 
+ AND distance_in_miles > 0 ;
+-----
+
+## Seeing how many casual riders have trips longer than 2 hours
+SELECT 
+ *
+FROM `finalprojectbikedata.TripData.final_trip_info`
+WHERE member_casual = 'casual'
+ AND ride_length_minutes > 120
+ AND distance_in_miles > 0
+-----
+
+## Seeing how many member riders have trips longer than 2 hours
+SELECT 
+ *
+FROM `finalprojectbikedata.TripData.final_trip_info`
+WHERE member_casual = 'member'
+ AND ride_length_minutes > 120
+ AND distance_in_miles > 0
+      
